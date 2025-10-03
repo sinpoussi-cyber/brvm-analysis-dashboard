@@ -1,5 +1,5 @@
 # ==============================================================================
-# BRVM ANALYSIS DASHBOARD (V0.2 - DASHBOARD AMÉLIORÉ AVEC GRAPHIQUES ET ONGLETS)
+# BRVM ANALYSIS DASHBOARD (V0.1 - STREAMLIT)
 # ==============================================================================
 
 import streamlit as st
@@ -18,20 +18,20 @@ API_URL = "https://brvm-api-gateway.onrender.com" # L'URL de votre API sur Rende
 
 # --- Fonctions de l'Application ---
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600) # Mettre en cache la liste des sociétés pendant 1 heure
 def get_companies():
     """Récupère la liste des sociétés depuis l'API."""
     try:
         response = requests.get(f"{API_URL}/companies/")
-        response.raise_for_status()
+        response.raise_for_status() # Lève une exception si la requête échoue (ex: 404, 500)
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Erreur de connexion à l'API pour charger les sociétés : {e}")
         return []
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600) # Mettre en cache l'analyse d'une société pendant 10 minutes
 def get_analysis(symbol):
-    """Récupère l'analyse complète pour un symbole donné."""
+    """Récupère l'analyse complète pour un symbole donné depuis l'API."""
     if not symbol:
         return None
     try:
@@ -42,88 +42,63 @@ def get_analysis(symbol):
         st.error(f"Impossible de récupérer l'analyse pour {symbol} : {e}")
         return None
 
-# --- BARRE LATÉRALE (SIDEBAR) ---
-st.sidebar.title("📈 Navigation")
-st.sidebar.markdown("Sélectionnez une société pour afficher son analyse détaillée.")
+# --- Interface Utilisateur de l'Application ---
 
+st.title("📊 Tableau de Bord d'Analyse - Marché BRVM")
+st.markdown("Bienvenue sur votre tableau de bord personnel pour l'analyse des sociétés de la Bourse Régionale des Valeurs Mobilières.")
+
+# Charger la liste des sociétés
 companies = get_companies()
 
 if companies:
+    # Créer un dictionnaire pour trouver facilement le nom à partir du symbole
+    # (ex: {'SNTS': 'SONATEL', 'SOGC': 'SOGB CI'})
     company_map = {comp['symbol']: comp['name'] for comp in companies}
     
-    selected_symbol = st.sidebar.selectbox(
-        label="Choisissez une société :",
-        options=sorted(company_map.keys()),
-        format_func=lambda symbol: f"{company_map[symbol]} ({symbol})"
+    # Menu déroulant pour sélectionner une société
+    selected_symbol = st.selectbox(
+        label="Choisissez une société à analyser :",
+        options=sorted(company_map.keys()), # Trier les symboles par ordre alphabétique
+        format_func=lambda symbol: f"{company_map[symbol]} ({symbol})" # Affiche "SONATEL (SNTS)" dans la liste
     )
-else:
-    st.sidebar.warning("API non disponible.")
-    selected_symbol = None
 
-
-# --- PAGE PRINCIPALE ---
-st.title("📊 Tableau de Bord d'Analyse - Marché BRVM")
-
-if selected_symbol:
-    with st.spinner(f"Chargement de l'analyse pour {selected_symbol}..."):
-        analysis = get_analysis(selected_symbol)
-
-    if analysis:
-        st.header(f"Analyse pour {analysis.get('company_name', selected_symbol)}")
-        st.caption(f"Dernières données du {analysis.get('last_trade_date', 'N/A')}")
-        
-        # --- GRAPHIQUE D'ÉVOLUTION DU COURS ---
-        st.subheader("Évolution du Cours sur 50 Jours")
-        price_data_df = pd.DataFrame(analysis.get('price_data', []))
-        if not price_data_df.empty:
-            price_data_df['trade_date'] = pd.to_datetime(price_data_df['trade_date'])
-            price_data_df.set_index('trade_date', inplace=True)
-            st.line_chart(price_data_df['price'])
-        else:
-            st.info("Données de prix non disponibles pour tracer le graphique.")
-
+    if selected_symbol:
         st.markdown("---")
+        
+        # Afficher un indicateur de chargement pendant que les données sont récupérées
+        with st.spinner(f"Chargement de l'analyse pour {selected_symbol}..."):
+            analysis = get_analysis(selected_symbol)
 
-        # --- ONGLET D'ANALYSES ---
-        tab1, tab2, tab3 = st.tabs(["💡 Synthèse IA", "📈 Analyse Technique Détaillée", "📄 Analyse Fondamentale"])
+        if analysis:
+            # Afficher le titre de l'analyse
+            st.header(f"Analyse pour {analysis.get('company_name', selected_symbol)}")
+            st.caption(f"Dernières données disponibles du {analysis.get('last_trade_date', 'N/A')}")
 
-        with tab1:
-            st.subheader("Synthèse Générale par l'IA")
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric(label="Dernier Cours", value=f"{analysis.get('last_price', 'N/A')} FCFA")
-            
-            # Ici, nous pourrions ajouter plus tard une conclusion générale de l'IA
-            st.info("Cette section affichera bientôt une conclusion d'investissement globale générée par l'IA.")
+            # Afficher le dernier cours mis en évidence
+            st.metric(label="Dernier Cours de Clôture", value=f"{analysis.get('last_price', 'N/A')} FCFA")
 
-        with tab2:
-            st.subheader("Détails des Indicateurs Techniques")
-            col1, col2 = st.columns([1, 2]) # Une colonne pour les données, une pour l'analyse
+            # Séparer les analyses en deux colonnes pour une meilleure lisibilité
+            col1, col2 = st.columns(2)
 
             with col1:
-                tech_analysis_data = analysis.get('technical_analysis', {})
-                if tech_analysis_data:
-                    # Créer un DataFrame pour un affichage propre
-                    df_tech = pd.DataFrame.from_dict(tech_analysis_data, orient='index', columns=['Valeur / Signal'])
-                    st.dataframe(df_tech)
+                st.subheader("Synthèse Technique")
+                tech_analysis = analysis.get('technical_analysis', {})
+                if tech_analysis:
+                    st.write(f"**Signaux des Moyennes Mobiles :** {tech_analysis.get('moving_average_signal', 'N/A')}")
+                    st.write(f"**Signaux des Bandes de Bollinger :** {tech_analysis.get('bollinger_bands_signal', 'N/A')}")
+                    st.write(f"**Signaux du MACD :** {tech_analysis.get('macd_signal', 'N/A')}")
+                    st.write(f"**Signaux du RSI :** {tech_analysis.get('rsi_signal', 'N/A')}")
+                    st.write(f"**Signaux du Stochastique :** {tech_analysis.get('stochastic_signal', 'N/A')}")
                 else:
-                    st.info("Données techniques non disponibles.")
-            
+                    st.info("Aucune donnée d'analyse technique disponible.")
+
             with col2:
-                st.markdown("**Analyse des signaux par l'IA :**")
-                # Ici, nous pourrions appeler l'IA pour analyser les signaux
-                st.write("L'analyse textuelle des indicateurs techniques sera ajoutée ici.")
-
-
-        with tab3:
-            st.subheader("Synthèse des Derniers Rapports Financiers")
-            fundamental_text = analysis.get('fundamental_analysis', "Aucune donnée.")
-            st.markdown(fundamental_text if fundamental_text else "Aucune analyse fondamentale disponible.")
-
+                st.subheader("Synthèse Fondamentale")
+                fundamental_text = analysis.get('fundamental_analysis', "Aucune donnée.")
+                st.markdown(fundamental_text if fundamental_text else "Aucune analyse fondamentale disponible.")
 else:
-    st.warning("Impossible de charger la liste des sociétés. Le service API est peut-être momentanément indisponible.")
+    st.warning("Impossible de charger la liste des sociétés depuis l'API. Le service est peut-être momentanément indisponible.")
 
-# --- Pied de page ---
+# Ajouter un pied de page
 st.markdown("---")
-st.info("Cette application est alimentée par l'API Gateway BRVM, connectée à une base de données d'analyses financières.")
+st.info("Cette application est alimentée par une API personnalisée connectée à une base de données d'analyses financières.")
