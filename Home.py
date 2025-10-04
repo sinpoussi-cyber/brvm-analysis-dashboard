@@ -1,5 +1,5 @@
 # ==============================================================================
-# BRVM ANALYSIS DASHBOARD (V0.2 - AVEC GRAPHIQUES)
+# BRVM ANALYSIS DASHBOARD (V0.3 - GESTION DES TIMEOUTS DE L'API)
 # ==============================================================================
 
 import streamlit as st
@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # --- Variables Globales ---
-API_URL = "https://brvm-api-gateway.onrender.com"
+API_URL = "https://brvm-api-gateway.onrender.com" # L'URL de votre API sur Render
 
 # --- Fonctions de l'Application ---
 
@@ -23,7 +23,8 @@ API_URL = "https://brvm-api-gateway.onrender.com"
 def get_companies():
     """Récupère la liste des sociétés depuis l'API."""
     try:
-        response = requests.get(f"{API_URL}/companies/")
+        # Ajout d'un timeout de 30 secondes pour laisser le temps à l'API de se réveiller
+        response = requests.get(f"{API_URL}/companies/", timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -32,22 +33,24 @@ def get_companies():
 
 @st.cache_data(ttl=600)
 def get_analysis(symbol):
-    """Récupère l'analyse complète pour un symbole donné."""
+    """Récupère l'analyse complète pour un symbole donné depuis l'API."""
     if not symbol:
         return None
     try:
-        response = requests.get(f"{API_URL}/analysis/{symbol}")
+        # Ajout d'un timeout de 30 secondes
+        response = requests.get(f"{API_URL}/analysis/{symbol}", timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Impossible de récupérer l'analyse pour {symbol} : {e}")
         return None
 
-# --- Interface Utilisateur ---
+# --- Interface Utilisateur de l'Application ---
 
 st.title("📊 Tableau de Bord d'Analyse - Marché BRVM")
 st.markdown("Bienvenue sur votre tableau de bord personnel pour l'analyse des sociétés de la Bourse Régionale des Valeurs Mobilières.")
 
+# Charger la liste des sociétés
 companies = get_companies()
 
 if companies:
@@ -71,7 +74,6 @@ if companies:
 
             st.metric(label="Dernier Cours de Clôture", value=f"{analysis.get('last_price', 'N/A')} FCFA")
 
-            # --- NOUVEAU : GRAPHIQUE INTERACTIF ---
             if 'price_history' in analysis and analysis['price_history']:
                 df_history = pd.DataFrame(analysis['price_history'])
                 df_history['date'] = pd.to_datetime(df_history['date'])
@@ -93,18 +95,17 @@ if companies:
             else:
                 st.info("Aucun historique de prix disponible pour générer le graphique.")
 
-
             col1, col2 = st.columns(2)
 
             with col1:
                 st.subheader("Synthèse Technique")
                 tech_analysis = analysis.get('technical_analysis', {})
                 if tech_analysis:
-                    st.write(f"**Moyennes Mobiles :** {tech_analysis.get('mm_decision', 'N/A')}")
-                    st.write(f"**Bandes de Bollinger :** {tech_analysis.get('bollinger_decision', 'N/A')}")
-                    st.write(f"**MACD :** {tech_analysis.get('macd_decision', 'N/A')}")
-                    st.write(f"**RSI :** {tech_analysis.get('rsi_decision', 'N/A')}")
-                    st.write(f"**Stochastique :** {tech_analysis.get('stochastic_decision', 'N/A')}")
+                    st.write(f"**Moyennes Mobiles :** {tech_analysis.get('moving_average_signal', 'N/A')}")
+                    st.write(f"**Bandes de Bollinger :** {tech_analysis.get('bollinger_bands_signal', 'N/A')}")
+                    st.write(f"**MACD :** {tech_analysis.get('macd_signal', 'N/A')}")
+                    st.write(f"**RSI :** {tech_analysis.get('rsi_signal', 'N/A')}")
+                    st.write(f"**Stochastique :** {tech_analysis.get('stochastic_signal', 'N/A')}")
                 else:
                     st.info("Aucune donnée d'analyse technique disponible.")
 
@@ -113,7 +114,7 @@ if companies:
                 fundamental_text = analysis.get('fundamental_analysis', "Aucune donnée.")
                 st.markdown(fundamental_text if fundamental_text else "Aucune analyse fondamentale disponible.")
 else:
-    st.warning("Impossible de charger la liste des sociétés depuis l'API. Le service est peut-être momentanément indisponible.")
+    st.warning("Impossible de charger la liste des sociétés depuis l'API. Le service est peut-être en cours de démarrage. Veuillez rafraîchir la page dans 30 secondes.")
 
 st.markdown("---")
 st.info("Cette application est alimentée par l'API BRVM Analysis Gateway. Les données sont fournies à titre indicatif.")
