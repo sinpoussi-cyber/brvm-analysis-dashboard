@@ -1,11 +1,13 @@
 # ==============================================================================
-# BRVM ANALYSIS DASHBOARD (V0.3 - GESTION DES TIMEOUTS DE L'API)
+# BRVM ANALYSIS DASHBOARD (V0.4 - GESTION DES RÉESSAIS API)
 # ==============================================================================
 
 import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
+import time
+import logging
 
 # --- Configuration de la Page ---
 st.set_page_config(
@@ -19,28 +21,36 @@ API_URL = "https://brvm-api-gateway.onrender.com" # L'URL de votre API sur Rende
 
 # --- Fonctions de l'Application ---
 
+def api_request_with_retry(url: str, retries: int = 3, delay: int = 5, timeout: int = 30):
+    """Effectue une requête GET avec plusieurs tentatives."""
+    for i in range(retries):
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            st.warning(f"Tentative {i + 1}/{retries} pour joindre l'API a échoué. Réessai dans {delay} secondes...")
+            time.sleep(delay) # Attendre avant de réessayer
+    # Si toutes les tentatives échouent, on lève l'exception finale
+    raise requests.exceptions.RequestException(f"Échec final de connexion à l'API après {retries} tentatives.")
+
+
 @st.cache_data(ttl=3600)
 def get_companies():
-    """Récupère la liste des sociétés depuis l'API."""
+    """Récupère la liste des sociétés depuis l'API avec des tentatives multiples."""
     try:
-        # Ajout d'un timeout de 30 secondes pour laisser le temps à l'API de se réveiller
-        response = requests.get(f"{API_URL}/companies/", timeout=30)
-        response.raise_for_status()
-        return response.json()
+        return api_request_with_retry(f"{API_URL}/companies/")
     except requests.exceptions.RequestException as e:
         st.error(f"Erreur de connexion à l'API pour charger les sociétés : {e}")
         return []
 
 @st.cache_data(ttl=600)
 def get_analysis(symbol):
-    """Récupère l'analyse complète pour un symbole donné depuis l'API."""
+    """Récupère l'analyse complète pour un symbole donné avec des tentatives multiples."""
     if not symbol:
         return None
     try:
-        # Ajout d'un timeout de 30 secondes
-        response = requests.get(f"{API_URL}/analysis/{symbol}", timeout=30)
-        response.raise_for_status()
-        return response.json()
+        return api_request_with_retry(f"{API_URL}/analysis/{symbol}")
     except requests.exceptions.RequestException as e:
         st.error(f"Impossible de récupérer l'analyse pour {symbol} : {e}")
         return None
@@ -50,7 +60,6 @@ def get_analysis(symbol):
 st.title("📊 Tableau de Bord d'Analyse - Marché BRVM")
 st.markdown("Bienvenue sur votre tableau de bord personnel pour l'analyse des sociétés de la Bourse Régionale des Valeurs Mobilières.")
 
-# Charger la liste des sociétés
 companies = get_companies()
 
 if companies:
@@ -101,7 +110,7 @@ if companies:
                 st.subheader("Synthèse Technique")
                 tech_analysis = analysis.get('technical_analysis', {})
                 if tech_analysis:
-                    st.write(f"**Moyennes Mobiles :** {tech_analysis.get('moving_average_signal', 'N/A')}")
+                    st.write(f"**Moyennes Mobiles :** {tech_analysis.get('mm_decision', 'N/A')}")
                     st.write(f"**Bandes de Bollinger :** {tech_analysis.get('bollinger_bands_signal', 'N/A')}")
                     st.write(f"**MACD :** {tech_analysis.get('macd_signal', 'N/A')}")
                     st.write(f"**RSI :** {tech_analysis.get('rsi_signal', 'N/A')}")
